@@ -6,7 +6,11 @@ from torchvision import transforms
 from torch import nn
 import time
 import cv2
-
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+import csv
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -14,22 +18,58 @@ else:
 
 print(device)
 
-trn_df = pd.read_csv('train_labels.csv')
-val_df = pd.read_csv('val_labels.csv')
-print(trn_df['age'].value_counts())
+
+# def make_csv_for_utk_data():
+#     test_dir= os.path.join('test')
+#     train_dir = os.path.join('train')
+#     data_dirs = [test_dir,train_dir]
+#     file_names = ['test','train']
+#     header = ['filepath','age', 'gender']
+#     train_data,test_data=[],[]
+#     for idx,data_dir in enumerate(data_dirs):
+#         for img_name in os.listdir(data_dir):
+#             age  = img_name.split('_')[0]
+#             gender = img_name.split('_')[1] 
+#             if idx==1:
+#                 path_img = 'train/{}'.format()
+#                 train_data.append([path_img,age,gender])
+#             else:
+#                 path_img = 'test/{}'.format()
+#                 test_data.append([path_img,age,gender])
+
+
+#     for file_name in file_names:
+#         csv_flnm = '{}.csv'.format(file_name)
+#         with open(file_name,'w',newline='',encoding ='utf-8') as file:
+#             writer = csv.writer(file)
+#             writer.writerow(header)
+#             if file_name=='test':
+#                 writer.writerows(test_data)
+#             else:
+#                 writer.writerows(train_data)
+#         print('{} csv file creation successfull'.format(file_name))
+
+# make_csv_for_utk_data()
+
+
+trn_df = pd.read_csv('/home/arif/Desktop/VSCODE PROJECTS/age_gender-prediction/dataset/train.csv')
+val_df = pd.read_csv('/home/arif/Desktop/VSCODE PROJECTS/age_gender-prediction/dataset/test.csv')
+# print(trn_df.head)
+
+NORMALIZE = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
 
 class data_maker(Dataset):
     def __init__(self, df):
         self.df = df
-        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                              std=[0.229, 0.224, 0.225])
+        self.normalize = NORMALIZE
     def __len__(self): return len(self.df)
 
     def __getitem__(self, ix):
       f = self.df.iloc[ix].squeeze()
       file = f.file
       age = f.age
-      gender = f.gender == 'Female'
+      gender = f.gender == '1' ##1 for female and 0 for male
       image = cv2.imread(file)
       image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
       return image, age, gender
@@ -40,35 +80,29 @@ class data_maker(Dataset):
         im = self.normalize(im/255.0)
         return im[None]
 
-    def preprocess_age(self, age):
-      if type(age)== str:
-        if 'more' in age:
-          return float(75/80)
-        if '-' in age:
-          age_range = age.split('-')
-          age = (int(age_range[0])+int(age_range[1]))/2
-          return float(age/80)
-      return float(int(age)/80)
-
     def collate_fn(self, batch):
         ims, ages, genders = [], [], []
         for image, age, gender in batch:
             genders.append(float(gender))
-            age_prep = self.preprocess_age(age)
-            ages.append(age_prep)
+            ages.append(float(int(age)/116))
             im = self.preprocess_image(image)
             ims.append(im)
-        ages, genders = [torch.tensor(x).to(device).float() for x in [ages, gender]]
+        ages, genders = [torch.tensor(x).to(device).float() for x in [ages, genders]]
         ims = torch.cat(ims).to(device)
         return ims, ages, genders
 
 trn = data_maker(trn_df)
 val = data_maker(val_df)
+
+
 train_loader = DataLoader(trn, batch_size=32, shuffle=True,
                           drop_last=True, collate_fn=trn.collate_fn)
 test_loader = DataLoader(val, batch_size=32, collate_fn=val.collate_fn)
 
-# ims, gens, ages = next(iter(train_loader))
+# ims, ages, genders = next(iter(test_loader))
+
+# print(ims.shape,ages.shape,genders.shape)
+
 
 def get_model():
     model = models.vgg16(pretrained = True)
@@ -120,32 +154,37 @@ def get_model():
 
     return model.to(device), total_loss, optim
 
-def train_batch(data, model, optim, criteria):
-    model.train()
-    optim.zero_grad()
-    im, age, gender = data
-    pred_gender, pred_age = model(im)
-    gender_loss, age_loss = criteria
-    age_L = age_loss(pred_age.squeeze(), age)
-    gender_L = gender_loss(pred_gender.squeeze(), gender)
-    total_L=gender_L+age_L
-    total_L.backward()
-    optim.step()
-    return total_L
+model, loss_, opt = get_model()
 
-def val_batch(data, model, criteria):
+print(model)
+
+def train_batch(data, model, optim, loss_function):
+    model.train()
+    im, age, gender = data
+    optim.zero_grad()
+    pred_gender, pred_age = model(im)
+    gender_loss_function, age_loss_function = loss_function
+    age_loss = age_loss_function(pred_age.squeeze(), age)
+    gender_loss = gender_loss_function(pred_gender.squeeze(), gender)
+    total_loss=gender_loss+age_loss
+    total_loss.backward()
+    optim.step()
+    return total_loss
+
+def val_batch(data, model, loss_function):
     model.eval()
     im, age, gender = data
     with torch.no_grad():
         pred_gender, pred_age = model(im)
-    gender_loss, age_loss = criteria
+    gender_loss, age_loss = loss_function
     age_L = age_loss(pred_age.squeeze(), age)
     gender_L = gender_loss(pred_gender.squeeze(), gender)
     total_L=gender_L+age_L
     gender_accuracy_step_1 = (pred_gender>0.5).squeeze()
-    gender_accuracy = (pred_gender == gender).float().sum()
+    gender_accuracy = (gender_accuracy_step_1 == gender).float().sum()
     age_error = (torch.abs(age - pred_age).float().sum())
     return total_L, gender_accuracy, age_error
+
 val_gender_accuracies = []
 val_age_maes = []
 train_losses = []
@@ -154,8 +193,6 @@ val_losses = []
 n_epochs = 5
 best_test_loss = 1000
 start = time.time()
-
-model, loss_, opt = get_model()
 
 for epoch in range(n_epochs):
     epoch_train_loss, epoch_test_loss = 0, 0
@@ -190,7 +227,7 @@ for epoch in range(n_epochs):
     val_gender_accuracies.append(val_gender_acc)
     val_age_maes.append(val_age_mae)
 
-torch.save(model.state_dict(), 'trained.pth')
+torch.save(model, 'trained.pth')
 
 epochs = np.arange(1,len(val_gender_accuracies)+1)
 fig,ax = plt.subplots(1,2,figsize=(10,5))
@@ -204,3 +241,22 @@ ax[1].set_ylabel('MAE')
 ax[0].set_title('Validation Gender Accuracy')
 ax[0].set_title('Validation Age Mean-Absolute-Error')
 plt.show()
+
+
+# model,_,_= get_model()
+# model.to(device)
+# # path_to_state = os.path.join('trained.pth')
+# state_dict = torch.load('trained.pth')
+# model.load_state_dict(state_dict)
+# model.eval()
+
+# # img_path = os.path.join('face.jpg')
+
+# # img =cv2.imread(img_path)
+# # img =cv2.resize(img, (224, 224))
+# # img = torch.tensor(img).permute([2,0,1])
+# # im = NORMALIZE(img/255.0)
+# # im = im[None]
+# # im.to(device)
+# # age, gender = model(im)
+# print(model)
