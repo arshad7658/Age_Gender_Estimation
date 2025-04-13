@@ -52,8 +52,8 @@ print(device)
 # make_csv_for_utk_data()
 
 
-trn_df = pd.read_csv('/home/arif/Desktop/VSCODE PROJECTS/age_gender-prediction/dataset/train.csv')
-val_df = pd.read_csv('/home/arif/Desktop/VSCODE PROJECTS/age_gender-prediction/dataset/test.csv')
+trn_df = pd.read_csv('dataset/train.csv')
+val_df = pd.read_csv('dataset/test.csv')
 # print(trn_df.head)
 
 NORMALIZE = transforms.Normalize(mean=[0.485, 0.456, 0.406],
