@@ -1,8 +1,3 @@
-!! Updated the code to make room for some optimisations. Currently training on my dinasour aged mobile gpu and will be uploading new saved model. The old one from google drive is useless and obsolete.
+Does what it says. Predicts age and gender of the person in a gicen image. Used vgg16 for transfer learning and pytorch for making the model. The 'main.py' is just an entry point. Un-comment train line to start training the model.
 
-uWu
-
-
-Estimates the gender and age of a person from the given image. Concept of transfer learning was used. I used vgg16 cause it felt a little easy to understand its architecture. Might use AlexNet for something similar next time. You can download the trained weights from the given link below and load the model if u dont wanna train again.
-
-https://drive.google.com/file/d/1B5Pdvz4_d0U1CHn6HtpnbgQmyBG5BfLj/view?usp=drive_link
+<a href="https://drive.google.com/file/d/1qBvXXA3K5icFInU0MCAvpZwBTR8S8bSP/view?usp=drive_link">Here's</a> a saved weight dictionary to load the model
